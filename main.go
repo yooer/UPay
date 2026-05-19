@@ -27,32 +27,37 @@ func main() {
 		return
 	}
 
-	// 检查是否包含 daemon 启动参数
-	var daemonMode bool
-	for _, arg := range os.Args[1:] {
-		if arg == "-d" || arg == "--daemon" {
-			daemonMode = true
-			break
-		}
+	// 命令行参数处理
+	cmdArg := ""
+	if len(os.Args) > 1 {
+		cmdArg = os.Args[1]
 	}
 
-	if daemonMode {
-		// 如果指定了 -d，但当前不是 daemon 主进程，则 fork 启动守护进程
-		if os.Getenv("UPAY_DAEMON") != "1" {
+	switch cmdArg {
+	case "start", "-d", "--daemon":
+		// 如果已经是 daemon 进程，则直接运行守护主进程
+		if os.Getenv("UPAY_DAEMON") == "1" {
+			runSupervisor()
+		} else {
 			runDaemon()
-			return
 		}
+	case "stop":
+		stopDaemon()
+	case "restart":
+		restartDaemon()
+	case "status":
+		statusDaemon()
+	default:
+		// 默认前台运行守护模式
+		runSupervisor()
 	}
-
-	// 运行守护主进程
-	runSupervisor()
 }
 
 func runDaemon() {
-	// 过滤掉 -d/--daemon 参数传递给子进程
+	// 过滤掉 start/-d/--daemon 等控制参数传递给子进程
 	var args []string
 	for _, arg := range os.Args[1:] {
-		if arg != "-d" && arg != "--daemon" {
+		if arg != "start" && arg != "-d" && arg != "--daemon" {
 			args = append(args, arg)
 		}
 	}
@@ -60,8 +65,11 @@ func runDaemon() {
 	cmd := exec.Command(os.Args[0], args...)
 	cmd.Env = append(os.Environ(), "UPAY_DAEMON=1")
 
-	// 将后台守护进程的输出重定向到 upay_daemon.log 文件中以备查看
-	logFile, err := os.OpenFile("upay_daemon.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// 确保 logs 目录存在
+	_ = os.MkdirAll("logs", 0755)
+
+	// 将后台守护进程的输出重定向到 logs/upay_daemon.log 文件中
+	logFile, err := os.OpenFile("logs/upay_daemon.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err == nil {
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
@@ -79,6 +87,76 @@ func runDaemon() {
 	os.Exit(0)
 }
 
+func stopDaemon() {
+	pidFile := "upay.pid"
+	pidData, err := os.ReadFile(pidFile)
+	if err != nil {
+		fmt.Println("未找到 upay.pid 文件，程序可能未在后台运行")
+		return
+	}
+
+	var pid int
+	if _, err := fmt.Sscanf(string(pidData), "%d", &pid); err != nil {
+		fmt.Println("解析 upay.pid 失败")
+		return
+	}
+
+	if !checkProcessExists(pid) {
+		fmt.Printf("未找到 PID 为 %d 的进程，可能已退出，正在清理 pid 文件...\n", pid)
+		_ = os.Remove(pidFile)
+		return
+	}
+
+	fmt.Printf("正在终止 UPay Pro 守护进程 (PID: %d)... ", pid)
+	if err := killProcess(pid); err != nil {
+		fmt.Printf("发送终止信号失败: %v\n", err)
+		return
+	}
+
+	// 等待退出
+	for i := 0; i < 20; i++ {
+		if !checkProcessExists(pid) {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	if checkProcessExists(pid) {
+		fmt.Println("优雅退出超时，可能需要手动终止。")
+	} else {
+		fmt.Println("已成功停止。")
+	}
+	_ = os.Remove(pidFile)
+}
+
+func restartDaemon() {
+	stopDaemon()
+	fmt.Println("正在启动新的后台服务...")
+	runDaemon()
+}
+
+func statusDaemon() {
+	pidFile := "upay.pid"
+	pidData, err := os.ReadFile(pidFile)
+	if err != nil {
+		fmt.Println("UPay Pro 未在后台运行 (未找到 upay.pid)")
+		return
+	}
+
+	var pid int
+	if _, err := fmt.Sscanf(string(pidData), "%d", &pid); err != nil {
+		fmt.Println("解析 upay.pid 失败")
+		return
+	}
+
+	if checkProcessExists(pid) {
+		fmt.Printf("UPay Pro 正在运行 (守护进程 PID: %d)\n", pid)
+	} else {
+		fmt.Printf("UPay Pro 已停止，但残留 upay.pid 文件 (PID: %d)，正在清理...\n", pid)
+		_ = os.Remove(pidFile)
+	}
+}
+
 func runWorker() {
 	defer func() {
 		if err := recover(); err != nil {
@@ -92,6 +170,13 @@ func runWorker() {
 }
 
 func runSupervisor() {
+	// 写入 PID 文件
+	pidFile := "upay.pid"
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0644); err != nil {
+		mylog.Logger.Error("写入 upay.pid 失败", zap.Error(err))
+	}
+	defer os.Remove(pidFile)
+
 	mylog.Logger.Info("守护主进程已启动，正在启动并监控工作进程...")
 
 	for {
