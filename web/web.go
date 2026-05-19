@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -12,7 +13,6 @@ import (
 
 	"upay_pro/cron"
 
-	"github.com/fvbock/endless"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"go.uber.org/zap"
@@ -594,6 +594,16 @@ func Start() {
 				updates["Barkkey"] = barkkey
 			}
 
+			// 判断是否修改了需要重启的配置
+			var restartRequired bool
+			criticalFields := []string{"Httpport", "Redishost", "Redisport", "Redispasswd", "Redisdb"}
+			for _, field := range criticalFields {
+				if _, ok := updates[field]; ok {
+					restartRequired = true
+					break
+				}
+			}
+
 			// 执行更新
 			if len(updates) > 0 {
 				result := sdb.DB.Model(&setting).Where("id = ?", setting.ID).Updates(updates)
@@ -601,6 +611,15 @@ func Start() {
 					c.JSON(500, gin.H{"code": 1, "message": "保存失败"})
 					return
 				}
+			}
+
+			if restartRequired {
+				c.JSON(200, gin.H{"code": 0, "message": "保存成功，系统正在重启以应用新配置..."})
+				go func() {
+					time.Sleep(1 * time.Second)
+					os.Exit(100) // 退出码 100 触发守护进程重启
+				}()
+				return
 			}
 
 			c.JSON(200, gin.H{"code": 0, "message": "保存成功"})
@@ -740,6 +759,8 @@ func Start() {
 
 	// 读取系统设置
 	port := sdb.GetSetting().Httpport
-	// endless.ListenAndServe(":8080", r)
-	endless.ListenAndServe(fmt.Sprintf(":%d", port), r)
+	// r.Run 会调用 http.ListenAndServe 启动服务
+	if err := r.Run(fmt.Sprintf(":%d", port)); err != nil {
+		mylog.Logger.Error("Web 服务启动失败", zap.Error(err))
+	}
 }

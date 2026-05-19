@@ -269,6 +269,12 @@ func AuthMiddleware() gin.HandlerFunc {
 	}
 }
 func CreateTransaction(c *gin.Context) {
+	// 校验 Redis 连接，若异常则直接拒绝创建交易/收款
+	if !rdb.IsConnected() {
+		c.JSON(400, gin.H{"code": 1, "message": "系统维护中，Redis连接异常，暂不支持收款"})
+		return
+	}
+
 	// 创建锁
 	sync_mu.Lock()
 	// 本函数最后释放锁

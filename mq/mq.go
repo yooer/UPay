@@ -3,6 +3,7 @@ package mq
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 	"upay_pro/db/sdb"
 	"upay_pro/mylog"
@@ -21,6 +22,11 @@ var Mux *asynq.ServeMux
 var Inspector *asynq.Inspector
 
 func init() {
+	// 如果不是工作进程，则不初始化异步任务队列
+	if os.Getenv("UPAY_IS_WORKER") != "1" {
+		return
+	}
+
 	// 获取redis地址
 	addr := fmt.Sprintf("%s:%d", sdb.GetSetting().Redishost, sdb.GetSetting().Redisport)
 	// 初始客户端
