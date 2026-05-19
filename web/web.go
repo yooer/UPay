@@ -762,5 +762,6 @@ func Start() {
 	// r.Run 会调用 http.ListenAndServe 启动服务
 	if err := r.Run(fmt.Sprintf(":%d", port)); err != nil {
 		mylog.Logger.Error("Web 服务启动失败", zap.Error(err))
+		os.Exit(1)
 	}
 }
