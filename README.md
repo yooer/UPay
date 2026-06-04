@@ -49,9 +49,25 @@
 - SQLite 数据库
 - Redis
 
-## 🛠️ 安装部署
+## 🛠️ 安装部署与编译
 
-下载编译后的文件直接启动即可
+本项目已使用 Go 的 `embed` 特性将所有的静态文件（`static` 目录下的 HTML 模板、CSS 和 JS）全部打包进入了二进制文件。在部署时，您只需要下载或上传单个编译好的 `UPay` 可执行文件即可直接运行，无需再额外上传 `static` 目录。
+
+### 源码编译说明
+
+如果您是从源码自行编译，请确保本地安装了 Go 1.16 或更高版本。在项目根目录下运行以下命令进行编译：
+
+- **Linux 平台编译**：
+  ```bash
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o UPay main.go
+  ```
+
+- **Windows 平台编译**：
+  ```bash
+  go build -ldflags="-s -w" -o UPay.exe main.go
+  ```
+
+编译完成后直接将生成的 `UPay` 可执行文件部署到服务器上即可。
 
 YouTube：https://youtu.be/-jsk6_KKUy4
 

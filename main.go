@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,9 @@ import (
 
 	"go.uber.org/zap"
 )
+
+//go:embed static
+var staticFS embed.FS
 
 const (
 	EnvWorkerKey    = "UPAY_IS_WORKER"
@@ -166,7 +170,7 @@ func runWorker() {
 	}()
 
 	go cron.Start()
-	web.Start()
+	web.Start(staticFS)
 }
 
 func runSupervisor() {

@@ -1,7 +1,10 @@
 package web
 
 import (
+	"embed"
 	"fmt"
+	"html/template"
+	"io/fs"
 	"net/http"
 	"os"
 	"strconv"
@@ -18,12 +21,13 @@ import (
 	"go.uber.org/zap"
 )
 
+
 type User struct {
 	UserName string `json:"username" form:"username" validate:"required,min=5,max=12,alphanum"`
 	PassWord string `json:"password" form:"password" validate:"required,min=6,max=18,alphanum"`
 }
 
-func Start() {
+func Start(staticFS embed.FS) {
 	// 创建一个新的验证器实例
 	validate := validator.New()
 	r := gin.Default()
@@ -37,11 +41,23 @@ func Start() {
 	   		MaxAge:           10 * time.Minute,                         // 缓存时间
 	   	})) */
 	// 加载模版
-	r.LoadHTMLGlob("static/*.html")
-	// 加载静态资源并把原始目录重定向
+	templ := template.Must(template.New("").ParseFS(staticFS, "static/*.html"))
+	r.SetHTMLTemplate(templ)
 
-	r.Static("/css", "./static/css")
-	r.Static("/js", "./static/js")
+	// 加载静态资源并把原始目录重定向
+	cssFS, err := fs.Sub(staticFS, "static/css")
+	if err != nil {
+		mylog.Logger.Error("加载 CSS 静态资源失败", zap.Error(err))
+	} else {
+		r.StaticFS("/css", http.FS(cssFS))
+	}
+
+	jsFS, err := fs.Sub(staticFS, "static/js")
+	if err != nil {
+		mylog.Logger.Error("加载 JS 静态资源失败", zap.Error(err))
+	} else {
+		r.StaticFS("/js", http.FS(jsFS))
+	}
 	// 首页路由
 	r.GET("/", func(c *gin.Context) {
 		c.HTML(200, "index.html", gin.H{})
